@@ -24,18 +24,18 @@
 #
 
 import atexit
-from datetime import datetime
-from decimal import Decimal, InvalidOperation
 import signal
 import subprocess
 import time
-
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 # Python < 3.2 doesn't provide a context manager interface for Popen.
 # Let's make our own wrapper if needed.
-if hasattr(subprocess.Popen, '__exit__'):
+if hasattr(subprocess.Popen, "__exit__"):
     Popen = subprocess.Popen
 else:
+
     class ContextManagedPopen(subprocess.Popen):
         def __enter__(self):
             return self
@@ -48,6 +48,7 @@ else:
             if self.stdin:
                 self.stdin.close()
             self.wait()
+
     Popen = ContextManagedPopen
 
 
@@ -71,9 +72,19 @@ class Rofi(object):
     for available markup.
 
     """
-    def __init__(self, lines=None, fixed_lines=None, width=None,
-                 fullscreen=None, location=None,
-                 exit_hotkeys=('Alt+F4', 'Control+q'), rofi_args=None):
+
+    def __init__(
+        self,
+        lines=None,
+        fixed_lines=None,
+        width=None,
+        fullscreen=None,
+        location=None,
+        exit_hotkeys=("Alt+F4", "Control+q"),
+        rofi_args=None,
+        theme_str=None,
+        config_file=None,
+    ):
         """
         Parameters
         ----------
@@ -112,6 +123,8 @@ class Rofi(object):
         self._process = None
 
         # Save parameters.
+        self.theme_str = theme_str
+        self.config_file = config_file
         self.lines = lines
         self.fixed_lines = fixed_lines
         self.width = width
@@ -123,7 +136,6 @@ class Rofi(object):
         # Don't want a window left on the screen if we exit unexpectedly
         # (e.g., an unhandled exception).
         atexit.register(self.close)
-
 
     @classmethod
     def escape(self, string):
@@ -143,16 +155,9 @@ class Rofi(object):
         # dictionary, we can't guarantee order of translations and so doing it
         # in one go would risk the ampersands in other translations being
         # escaped again.
-        return string.translate(
-            {38: '&amp;'}
-        ).translate({
-            34: '&quot;',
-            39: '&apos;',
-            60: '&lt;',
-            62: '&gt;'
-        })
-
-
+        return string.translate({38: "&amp;"}).translate(
+            {34: "&quot;", 39: "&apos;", 60: "&lt;", 62: "&gt;"}
+        )
 
     def close(self):
         """Close any open window.
@@ -167,7 +172,7 @@ class Rofi(object):
             # If it doesn't close itself promptly, be brutal.
             # Python 3.2+ added the timeout option to wait() and the
             # corresponding TimeoutExpired exception. If they exist, use them.
-            if hasattr(subprocess, 'TimeoutExpired'):
+            if hasattr(subprocess, "TimeoutExpired"):
                 try:
                     self._process.wait(timeout=1)
                 except subprocess.TimeoutExpired:
@@ -188,7 +193,6 @@ class Rofi(object):
 
             # Clean up.
             self._process = None
-
 
     def _run_blocking(self, args, input=None):
         """Internal API: run a blocking command with subprocess.
@@ -214,17 +218,17 @@ class Rofi(object):
 
         # Make sure we grab stdout as text (not bytes).
         kwargs = {}
-        kwargs['stdout'] = subprocess.PIPE
-        kwargs['universal_newlines'] = True
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["universal_newlines"] = True
 
         # Use the run() method if available (Python 3.5+).
-        if hasattr(subprocess, 'run'):
+        if hasattr(subprocess, "run"):
             result = subprocess.run(args, input=input, **kwargs)
             return result.returncode, result.stdout
 
         # Have to do our own. If we need to feed stdin, we must open a pipe.
         if input is not None:
-            kwargs['stdin'] = subprocess.PIPE
+            kwargs["stdin"] = subprocess.PIPE
 
         # Start the process.
         with Popen(args, **kwargs) as proc:
@@ -236,7 +240,6 @@ class Rofi(object):
 
             # Done.
             return returncode, stdout
-
 
     def _run_nonblocking(self, args, input=None):
         """Internal API: run a non-blocking command with subprocess.
@@ -258,39 +261,56 @@ class Rofi(object):
         # Start the new one.
         self._process = subprocess.Popen(args, stdout=subprocess.PIPE)
 
-
     def _common_args(self, allow_fullscreen=True, **kwargs):
         args = []
 
+        if self.theme_str:
+            theme_str = kwargs.get("theme", self.theme_str)
+            args.extend(["-theme-str", str(theme_str)])
+
+        # config file
+        if self.config_file:
+            from pathlib import Path
+
+            config_file = Path(kwargs.get("config_file", self.config_file))
+            if (
+                not config_file.expanduser().exists()
+                or config_file.expanduser().is_dir()
+            ):
+                raise ValueError(
+                    f"config_file {str(config_file)} is not a valid file or does not exist"
+                )
+            args.extend(["-config", str(config_file.expanduser())])
+            return args
+
         # Number of lines.
-        lines = kwargs.get('lines', self.lines)
+        lines = kwargs.get("lines", self.lines)
         if lines:
-            args.extend(['-lines', str(lines)])
-        fixed_lines = kwargs.get('fixed_lines', self.fixed_lines)
+            args.extend(["-lines", str(lines)])
+        fixed_lines = kwargs.get("fixed_lines", self.fixed_lines)
         if fixed_lines:
-            args.extend(['-fixed-num-lines', str(fixed_lines)])
+            args.extend(["-fixed-num-lines", str(fixed_lines)])
 
         # Width.
-        width = kwargs.get('width', self.width)
+        width = kwargs.get("width", self.width)
         if width is not None:
-            args.extend(['-width', str(width)])
+            args.extend(["-width", str(width)])
 
         # Fullscreen mode?
-        fullscreen = kwargs.get('fullscreen', self.fullscreen)
+        fullscreen = kwargs.get("fullscreen", self.fullscreen)
         if allow_fullscreen and fullscreen:
-            args.append('-fullscreen')
+            args.append("-fullscreen")
 
         # Location on screen.
-        location = kwargs.get('location', self.location)
+        location = kwargs.get("location", self.location)
         if location is not None:
-            args.extend(['-location', str(location)])
+            args.extend(["-location", str(location)])
 
         # Any other arguments
         args.extend(self.rofi_args)
 
         # Done.
         return args
-
 
     def error(self, message, rofi_args=None, **kwargs):
         """Show an error window.
@@ -308,13 +328,12 @@ class Rofi(object):
         """
         rofi_args = rofi_args or []
         # Generate arguments list.
-        args = ['rofi', '-e', message]
+        args = ["rofi", "-e", message]
         args.extend(self._common_args(allow_fullscreen=False, **kwargs))
         args.extend(rofi_args)
 
         # Close any existing window and show the error.
         self._run_blocking(args)
-
 
     def status(self, message, rofi_args=None, **kwargs):
         """Show a status message.
@@ -336,15 +355,16 @@ class Rofi(object):
         """
         rofi_args = rofi_args or []
         # Generate arguments list.
-        args = ['rofi', '-e', message]
+        args = ["rofi", "-e", message]
         args.extend(self._common_args(allow_fullscreen=False, **kwargs))
         args.extend(rofi_args)
 
         # Update the status.
         self._run_nonblocking(args)
 
-
-    def select(self, prompt, options, rofi_args=None, message="", select=None, **kwargs):
+    def select(
+        self, prompt, options, rofi_args=None, message="", select=None, **kwargs
+    ):
         """Show a list of options and return user selection.
 
         This method blocks until the user makes their choice.
@@ -387,12 +407,12 @@ class Rofi(object):
         """
         rofi_args = rofi_args or []
         # Replace newlines and turn the options into a single string.
-        optionstr = '\n'.join(option.replace('\n', ' ') for option in options)
+        optionstr = "\n".join(option.replace("\n", " ") for option in options)
 
         # Set up arguments.
-        args = ['rofi', '-dmenu', '-p', prompt, '-format', 'i']
+        args = ["rofi", "-dmenu", "-p", prompt, "-format", "i"]
         if select is not None:
-            args.extend(['-selected-row', str(select)])
+            args.extend(["-selected-row", str(select)])
 
         # Key bindings to display.
         display_bindings = []
@@ -401,7 +421,7 @@ class Rofi(object):
         user_keys = set()
         for k, v in kwargs.items():
             # See if the keyword name matches the needed format.
-            if not k.startswith('key'):
+            if not k.startswith("key"):
                 continue
             try:
                 keynum = int(k[3:])
@@ -411,7 +431,7 @@ class Rofi(object):
             # Add it to the set.
             key, action = v
             user_keys.add(keynum)
-            args.extend(['-kb-custom-{0:s}'.format(k[3:]), key])
+            args.extend(["-kb-custom-{0:s}".format(k[3:]), key])
             if action:
                 display_bindings.append("<b>{0:s}</b>: {1:s}".format(key, action))
 
@@ -422,7 +442,7 @@ class Rofi(object):
             while next_key in user_keys:
                 next_key += 1
             exit_keys.add(next_key)
-            args.extend(['-kb-custom-{0:d}'.format(next_key), key])
+            args.extend(["-kb-custom-{0:d}".format(next_key), key])
             next_key += 1
 
         # Add any displayed key bindings to the message.
@@ -433,7 +453,7 @@ class Rofi(object):
 
         # If we have a message, add it to the arguments.
         if message:
-            args.extend(['-mesg', message])
+            args.extend(["-mesg", message])
 
         # Add in common arguments.
         args.extend(self._common_args(**kwargs))
@@ -456,13 +476,16 @@ class Rofi(object):
             if key in exit_keys:
                 raise SystemExit()
         else:
-            self.exit_with_error("Unexpected rofi returncode {0:d}.".format(results.returncode))
+            self.exit_with_error(
+                "Unexpected rofi returncode {0:d}.".format(results.returncode)
+            )
 
         # And return.
         return index, key
 
-
-    def generic_entry(self, prompt, validator=None, message=None, rofi_args=None, **kwargs):
+    def generic_entry(
+        self, prompt, validator=None, message=None, rofi_args=None, **kwargs
+    ):
         """A generic entry box.
 
         Parameters
@@ -500,17 +523,19 @@ class Rofi(object):
 
         # Keep going until we get something valid.
         while True:
-            args = ['rofi', '-dmenu', '-p', prompt, '-format', 's']
+            args = ["rofi", "-dmenu", "-p", prompt, "-format", "s"]
 
             # Add any error to the given message.
             msg = message or ""
             if error:
-                msg = '<span color="#FF0000" font_weight="bold">{0:s}</span>\n{1:s}'.format(error, msg)
-                msg = msg.rstrip('\n')
+                msg = '<span color="#FF0000" font_weight="bold">{0:s}</span>\n{1:s}'.format(
+                    error, msg
+                )
+                msg = msg.rstrip("\n")
 
             # If there is actually a message to show.
             if msg:
-                args.extend(['-mesg', msg])
+                args.extend(["-mesg", msg])
 
             # Add in common arguments.
             args.extend(self._common_args(**kwargs))
@@ -524,7 +549,7 @@ class Rofi(object):
                 return None
 
             # Get rid of the trailing newline and check its validity.
-            text = stdout.rstrip('\n')
+            text = stdout.rstrip("\n")
             if validator:
                 value, error = validator(text)
                 if not error:
@@ -532,9 +557,15 @@ class Rofi(object):
             else:
                 return text
 
-
-    def text_entry(self, prompt, message=None, allow_blank=False, strip=True,
-            rofi_args=None, **kwargs):
+    def text_entry(
+        self,
+        prompt,
+        message=None,
+        allow_blank=False,
+        strip=True,
+        rofi_args=None,
+        **kwargs,
+    ):
         """Prompt the user to enter a piece of text.
 
         Parameters
@@ -554,6 +585,7 @@ class Rofi(object):
         string, or None if the dialog was cancelled.
 
         """
+
         def text_validator(text):
             if strip:
                 text = text.strip()
@@ -565,8 +597,9 @@ class Rofi(object):
 
         return self.generic_entry(prompt, text_validator, message, rofi_args, **kwargs)
 
-
-    def integer_entry(self, prompt, message=None, min=None, max=None, rofi_args=None, **kwargs):
+    def integer_entry(
+        self, prompt, message=None, min=None, max=None, rofi_args=None, **kwargs
+    ):
         """Prompt the user to enter an integer.
 
         Parameters
@@ -604,10 +637,13 @@ class Rofi(object):
 
             return value, None
 
-        return self.generic_entry(prompt, integer_validator, message, rofi_args, **kwargs)
+        return self.generic_entry(
+            prompt, integer_validator, message, rofi_args, **kwargs
+        )
 
-
-    def float_entry(self, prompt, message=None, min=None, max=None, rofi_args=None, **kwargs):
+    def float_entry(
+        self, prompt, message=None, min=None, max=None, rofi_args=None, **kwargs
+    ):
         """Prompt the user to enter a floating point number.
 
         Parameters
@@ -647,8 +683,9 @@ class Rofi(object):
 
         return self.generic_entry(prompt, float_validator, message, rofi_args, **kwargs)
 
-
-    def decimal_entry(self, prompt, message=None, min=None, max=None, rofi_args=None, **kwargs):
+    def decimal_entry(
+        self, prompt, message=None, min=None, max=None, rofi_args=None, **kwargs
+    ):
         """Prompt the user to enter a decimal number.
 
         Parameters
@@ -686,11 +723,19 @@ class Rofi(object):
 
             return value, None
 
-        return self.generic_entry(prompt, decimal_validator, message, rofi_args, **kwargs)
+        return self.generic_entry(
+            prompt, decimal_validator, message, rofi_args, **kwargs
+        )
 
-
-    def date_entry(self, prompt, message=None, formats=['%x', '%d/%m/%Y'],
-            show_example=False, rofi_args=None, **kwargs):
+    def date_entry(
+        self,
+        prompt,
+        message=None,
+        formats=["%x", "%d/%m/%Y"],
+        show_example=False,
+        rofi_args=None,
+        **kwargs,
+    ):
         """Prompt the user to enter a date.
 
         Parameters
@@ -715,6 +760,7 @@ class Rofi(object):
         datetime.date, or None if the dialog is cancelled.
 
         """
+
         def date_validator(text):
             # Try them in order.
             for format in formats:
@@ -727,18 +773,26 @@ class Rofi(object):
                     return (dt.date(), None)
 
             # None of the formats worked.
-            return (None, 'Please enter a valid date.')
+            return (None, "Please enter a valid date.")
 
         # Add an example to the message?
         if show_example:
             message = message or ""
-            message += "Today's date in the correct format: " + datetime.now().strftime(formats[0])
+            message += "Today's date in the correct format: " + datetime.now().strftime(
+                formats[0]
+            )
 
         return self.generic_entry(prompt, date_validator, message, rofi_args, **kwargs)
 
-
-    def time_entry(self, prompt, message=None, formats=['%X', '%H:%M', '%I:%M', '%H.%M',
-        '%I.%M'], show_example=False, rofi_args=None, **kwargs):
+    def time_entry(
+        self,
+        prompt,
+        message=None,
+        formats=["%X", "%H:%M", "%I:%M", "%H.%M", "%I.%M"],
+        show_example=False,
+        rofi_args=None,
+        **kwargs,
+    ):
         """Prompt the user to enter a time.
 
         Parameters
@@ -763,6 +817,7 @@ class Rofi(object):
         datetime.time, or None if the dialog is cancelled.
 
         """
+
         def time_validator(text):
             # Try them in order.
             for format in formats:
@@ -775,18 +830,28 @@ class Rofi(object):
                     return (dt.time(), None)
 
             # None of the formats worked.
-            return (None, 'Please enter a valid time.')
+            return (None, "Please enter a valid time.")
 
         # Add an example to the message?
         if show_example:
             message = message or ""
-            message += "Current time in the correct format: " + datetime.now().strftime(formats[0])
+            message += "Current time in the correct format: " + datetime.now().strftime(
+                formats[0]
+            )
 
-        return self.generic_entry(prompt, time_validator, message, rofi_args=None, **kwargs)
+        return self.generic_entry(
+            prompt, time_validator, message, rofi_args=None, **kwargs
+        )
 
-
-    def datetime_entry(self, prompt, message=None, formats=['%x %X'], show_example=False,
-            rofi_args=None, **kwargs):
+    def datetime_entry(
+        self,
+        prompt,
+        message=None,
+        formats=["%x %X"],
+        show_example=False,
+        rofi_args=None,
+        **kwargs,
+    ):
         """Prompt the user to enter a date and time.
 
         Parameters
@@ -811,6 +876,7 @@ class Rofi(object):
         datetime.datetime, or None if the dialog is cancelled.
 
         """
+
         def datetime_validator(text):
             # Try them in order.
             for format in formats:
@@ -823,15 +889,19 @@ class Rofi(object):
                     return (dt, None)
 
             # None of the formats worked.
-            return (None, 'Please enter a valid date and time.')
+            return (None, "Please enter a valid date and time.")
 
         # Add an example to the message?
         if show_example:
             message = message or ""
-            message += "Current date and time in the correct format: " + datetime.now().strftime(formats[0])
+            message += (
+                "Current date and time in the correct format: "
+                + datetime.now().strftime(formats[0])
+            )
 
-        return self.generic_entry(prompt, datetime_validator, message, rofi_args, **kwargs)
-
+        return self.generic_entry(
+            prompt, datetime_validator, message, rofi_args, **kwargs
+        )
 
     def exit_with_error(self, error, **kwargs):
         """Report an error and exit.
