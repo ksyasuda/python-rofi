@@ -545,7 +545,7 @@ class Rofi(object):
             returncode, stdout = self._run_blocking(args, input="")
 
             # Was the dialog cancelled?
-            if returncode == 1:
+            if returncode != 0:
                 return None
 
             # Get rid of the trailing newline and check its validity.
